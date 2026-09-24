@@ -1,0 +1,19 @@
+{
+  "name": "sms",
+  "private": true,
+  "version": "0.1.0",
+  "description": "School Management System — foundation rebuild",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @sms/api",
+    "dev:admin": "npm run dev -w @sms/admin",
+    "start:api": "npm run start -w @sms/api",
+    "build:admin": "npm run build -w @sms/admin"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
