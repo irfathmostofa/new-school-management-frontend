@@ -3,13 +3,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-# Start API
-cd "$ROOT/apps/api"
-PORT=3001 node src/index.js &
-API_PID=$!
-
-# Start admin (exposed port)
+# Admin talks to Neon Data API from the browser. No local Express CRUD.
 cd "$ROOT/apps/admin"
 npm run dev
-
-trap "kill $API_PID" EXIT

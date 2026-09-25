@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { entities } from "@sms/crud-engine";
+import { useAuth } from "./auth";
 import { Shell } from "./layout/Shell";
 import { Dashboard } from "./pages/Dashboard";
 import { LookupManager } from "./pages/LookupManager";
@@ -8,10 +9,18 @@ import { EntityForm } from "./pages/EntityForm";
 import { PermissionsMatrix } from "./pages/PermissionsMatrix";
 import { RuleSimulator } from "./pages/RuleSimulator";
 import { EnrolApplication } from "./pages/EnrolApplication";
+import { Login } from "./pages/Login";
 
 const entityRoutes = Object.values(entities).map((e) => e.key);
 
 export default function App() {
+  const { loading, session, configured } = useAuth();
+  if (loading) {
+    return <p className="p-8 text-ink-500">Loading…</p>;
+  }
+  if (!configured || !session) {
+    return <Login />;
+  }
   return (
     <Routes>
       <Route element={<Shell />}>

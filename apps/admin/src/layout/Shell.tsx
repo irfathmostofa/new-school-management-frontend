@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { entities, navGroups } from "@sms/crud-engine";
 import { useState } from "react";
+import { useAuth } from "../auth";
 
 const extra = [
   { to: "/lookups", label: "Lookup manager" },
@@ -11,6 +12,10 @@ const extra = [
 
 export function Shell() {
   const loc = useLocation();
+  const { user, me, signOut } = useAuth();
+  const display =
+    [me?.person?.first_name, me?.person?.last_name].filter(Boolean).join(" ") || user?.name || user?.email || "Staff";
+  const role = me?.roles?.[0]?.name || "Staff";
   const [open, setOpen] = useState<Record<string, boolean>>({
     platform: false,
     iam: false,
@@ -84,8 +89,13 @@ export function Shell() {
             ))}
           </div>
         </nav>
-        <div className="border-t border-white/10 px-5 py-4 font-mono text-[11px] text-ink-500">
-          Ayesha Rahman · Super Admin
+        <div className="border-t border-white/10 px-5 py-4">
+          <div className="font-mono text-[11px] text-ink-400">
+            {display} · {role}
+          </div>
+          <button type="button" onClick={() => void signOut()} className="mt-2 text-[11px] text-brass-400 underline">
+            Sign out
+          </button>
         </div>
       </aside>
       <main className="min-w-0 flex-1">

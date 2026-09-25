@@ -2,13 +2,15 @@
 
 Entities, lookups and statuses match `packages/db/migrations/001_foundation.sql`.
 
-## Runtime in this environment
+## Runtime
 
-Neon is not provisioned in the preview workspace. The admin app talks to a local Express API (`apps/api`) that implements the foundation tables in JSON with the same seed as the SQL file. Swap the API for Neon Data API + RLS when the project is attached.
+Admin CRUD uses Neon Data API (`@neondatabase/neon-js`) with JWT from Neon Auth. RLS (`iam.has_permission`) enforces access. Configure `VITE_NEON_DATABASE_URL` (see `apps/admin/.env.example`). Apply `001`–`004`.
+
+Public views in `004_data_api.sql` expose entity keys (`campus`, `lookup_type`, …) so the client can `.from('campus')`.
 
 ## Screens
 
 - Lookup manager — all enum / status sets
-- CRUD engine screens for campus, session, wing, class, subject, house, department, designation, geography, person, roles, users, settings, rules, workflows, custom fields, templates
+- CRUD engine screens for campus, session, wing, class, subject, house, department, designation, geography, person, roles, users, permissions, settings, rules, workflows, custom fields, templates
 - Permission matrix
 - Rule simulator (json-logic subset over `late_count` / `absent_days`)

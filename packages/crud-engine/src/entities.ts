@@ -233,6 +233,48 @@ export const entities: Record<string, EntityConfig> = {
       { name: "status_id", label: "Status", type: "lookup", lookupType: "user_status", required: true },
     ],
   },
+  permission: {
+    key: "permission",
+    table: "iam.permission",
+    title: "Permission",
+    titlePlural: "Permissions",
+    searchFields: ["resource"],
+    listColumns: ["module_id", "resource", "action_id"],
+    fields: [
+      { name: "module_id", label: "Module", type: "fk", fkEntity: "module", fkLabel: "name", required: true },
+      { name: "resource", label: "Resource", type: "text", required: true },
+      { name: "action_id", label: "Action", type: "lookup", lookupType: "permission_action", required: true },
+    ],
+  },
+  role_permission: {
+    key: "role_permission",
+    table: "iam.role_permission",
+    title: "Role permission",
+    titlePlural: "Role permissions",
+    searchFields: [],
+    defaultSort: { field: "role_id", dir: "asc" },
+    listColumns: ["role_id", "permission_id"],
+    fields: [
+      { name: "role_id", label: "Role", type: "fk", fkEntity: "role", fkLabel: "name", required: true },
+      { name: "permission_id", label: "Permission", type: "fk", fkEntity: "permission", fkLabel: "resource", required: true },
+      { name: "condition", label: "Condition", type: "json" },
+    ],
+  },
+  user_role: {
+    key: "user_role",
+    table: "iam.user_role",
+    title: "User role",
+    titlePlural: "User roles",
+    searchFields: [],
+    listColumns: ["user_id", "role_id", "campus_id", "valid_from", "valid_to"],
+    fields: [
+      { name: "user_id", label: "User", type: "fk", fkEntity: "app_user", fkLabel: "id", required: true },
+      { name: "role_id", label: "Role", type: "fk", fkEntity: "role", fkLabel: "name", required: true },
+      { name: "campus_id", label: "Campus", type: "fk", fkEntity: "campus", fkLabel: "name" },
+      { name: "valid_from", label: "Valid from", type: "date", required: true },
+      { name: "valid_to", label: "Valid to", type: "date" },
+    ],
+  },
   setting_definition: {
     key: "setting_definition",
     table: "shared.setting_definition",
@@ -879,6 +921,9 @@ export const navGroups = [
     items: [
       { entity: "role", path: "/iam/roles" },
       { entity: "app_user", path: "/iam/users" },
+      { entity: "permission", path: "/iam/permissions-list" },
+      { entity: "role_permission", path: "/iam/role-permissions" },
+      { entity: "user_role", path: "/iam/user-roles" },
     ],
   },
   {

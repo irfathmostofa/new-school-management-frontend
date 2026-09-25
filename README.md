@@ -2,9 +2,9 @@
 
 A ground-up rebuild of the legacy `rooh_db` school system as a **normalized, rule-driven, admin-configurable** platform on **Neon Postgres**, with a modern React frontend.
 
-> Status: **Design phase** · Last updated: 2026-09-24
-> Done: module map, architecture, foundation schema v0.1 (`01_foundation_schema.sql`, tested on PostgreSQL 16)
-> Next: RLS layer → Student & Admission schema
+> Status: **Phase 2 UI on Neon Data API** · Last updated: 2026-09-25
+> Done: foundation + student/admission/calendar/front SQL, RLS, Data API grants/views/RPCs, React admin CRUD via `@neondatabase/neon-js`
+> Next: attach a Neon project, apply `001`–`004`, set `VITE_NEON_DATABASE_URL`
 
 ---
 
@@ -37,6 +37,15 @@ A ground-up rebuild of the legacy `rooh_db` school system as a **normalized, rul
 | Types | `neon-js gen-types` | Generated from the live schema |
 | Testing | Vitest, Playwright, SQL tests for RLS | RLS is tested like code |
 | CI/CD | GitHub Actions + Neon branch per PR | |
+
+### Local run
+
+1. Enable Neon Auth + Data API on a branch. Expose schemas `core`, `iam`, `shared`, `student`, `admission`, `front`, `cal` (or rely on `public` views from `004`).
+2. Apply `packages/db/migrations/001_foundation.sql` … `004_data_api.sql`.
+3. Copy `apps/admin/.env.example` to `apps/admin/.env` and set `VITE_NEON_DATABASE_URL` (HTTPS database URL, **not** a Postgres connection string).
+4. `npm install` then `npm run dev:admin` (or `./start.sh`). Sign in; the first account is bootstrapped as Super Admin.
+
+Simple lists/forms call `.from().select()` / `.insert()` / `.update()`. Enrolment is `rpc('enrol_application')`. Do not use `apps/api`.
 
 ### How the frontend talks to Neon
 
@@ -213,7 +222,7 @@ Phases 6 and 8 depend on earlier phases by design: Payroll needs Calendar, Atten
 |---|---|
 | Neon Auth maturity | Rebuilt on Better Auth; confirm current status before committing |
 | Phone-number OTP for parents | Not verified with Neon Auth; fallback is synthetic email or a small custom OTP flow |
-| Data API and custom schemas | Confirm the API can expose `core`, `iam`, `shared` — otherwise expose them or add views |
+| Data API and custom schemas | `004_data_api.sql` adds `public` views for entity keys; also expose domain schemas in Data API settings |
 | `.rpc()` support | Needed for calling Postgres functions from the client; test early |
 | Where server functions run | Cloudflare Workers (+ R2, cron) vs Vercel — pick one |
 | Attendance device brand and model | Decides the integration protocol (push, SDK, bridge) |

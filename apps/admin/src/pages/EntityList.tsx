@@ -120,17 +120,24 @@ export function EntityList({ entityKey }: { entityKey: string }) {
           </thead>
           <tbody>
             {(list.data?.data ?? []).map((row) => (
-              <tr key={String(row.id)} className="border-t border-paper-200 hover:bg-paper-100">
-                <td className="px-3 py-2 font-mono text-xs text-ink-500">{String(row.id)}</td>
+              <tr
+                key={String(row.id ?? `${row.role_id}:${row.permission_id}`)}
+                className="border-t border-paper-200 hover:bg-paper-100"
+              >
+                <td className="px-3 py-2 font-mono text-xs text-ink-500">
+                  {String(row.id ?? `${row.role_id}:${row.permission_id}`)}
+                </td>
                 {cfg.listColumns.map((c) => (
                   <td key={c} className="px-3 py-2">
                     {cell(row, c)}
                   </td>
                 ))}
                 <td className="px-3 py-2 text-right">
-                  <Link className="text-pine-600 underline" to={`/entities/${entityKey}/${row.id}`}>
-                    Edit
-                  </Link>
+                  {row.id != null && (
+                    <Link className="text-pine-600 underline" to={`/entities/${entityKey}/${row.id}`}>
+                      Edit
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
