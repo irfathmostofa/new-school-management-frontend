@@ -1,10 +1,8 @@
 # School Management System (SMS) — v2 Rebuild
 
-A ground-up rebuild of the legacy `rooh_db` school system as a **normalized, rule-driven, admin-configurable** platform on **Neon Postgres**, with a modern React frontend.
-
-> Status: **Phase 2 UI on Neon Data API** · Last updated: 2026-09-25
-> Done: foundation + student/admission/calendar/front SQL, RLS, Data API grants/views/RPCs, React admin CRUD via `@neondatabase/neon-js`
-> Next: attach a Neon project, apply `001`–`004`, set `VITE_NEON_DATABASE_URL`
+> Status: **Design phase** · Last updated: 2026-09-24
+> Done: module map, architecture, foundation schema v0.1 (`01_foundation_schema.sql`, tested on PostgreSQL 16)
+> Next: RLS layer → Student & Admission schema
 
 ---
 
@@ -19,50 +17,59 @@ A ground-up rebuild of the legacy `rooh_db` school system as a **normalized, rul
 
 ---
 
-## 2. Tech stack
+## 2. Tech stack — fully Neon-based backend, Vercel-hosted frontend
+
+Neon shipped a full backend suite in beta (Jul 2026): **Postgres, Auth, Data API, Object Storage, Functions, AI Gateway** — one project, one `neon.ts` config, branches carry all of it together. We use that suite for everything backend. **Vercel hosts only the two static/SPA frontends** (and can also host webhook receivers if we ever need compute outside Neon Functions).
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | **React + Vite + TypeScript** | Two apps (admin, portal) in one monorepo |
+| Frontend hosting | **Vercel** | Two static/SPA deployments: `admin.<domain>`, `portal.<domain>` |
+| Frontend | **React + Vite + TypeScript** | Two apps in one monorepo, built as static SPAs (no Vercel server runtime needed) |
 | Styling / UI | **Tailwind CSS + shadcn/ui** | Shared `packages/ui` |
 | Data fetching | **TanStack Query** | Caching, pagination, optimistic updates |
 | Tables / forms | **TanStack Table**, **React Hook Form + Zod** | Pagination is mandatory on every list |
 | Routing | **TanStack Router** | Type-safe search params for filters and pagination |
-| Database | **Neon Postgres** | Branch per environment / per PR |
-| Auth | **Neon Auth** (Better Auth based) | Identity only; school roles live in our `iam` schema |
-| Simple CRUD API | **Neon Data API** (PostgREST-compatible) via `@neondatabase/neon-js` | Supabase-style `.from().select()`; security = RLS |
-| Business logic | **Server functions** (Hono on Cloudflare Workers or Vercel) + `@neondatabase/serverless` | Payroll, invoicing, rule engine, webhooks, cron |
-| File storage | **Cloudflare R2 / S3** | DB stores references only (`shared.file`) |
-| Migrations | **SQL-first versioned migrations** (e.g. dbmate) | Triggers, functions and RLS don't fit ORM schema tools |
+| Database | **Neon Postgres** | `school` project, branch per environment / per PR |
+| Auth | **Neon Auth** (Managed Better Auth) | Identity only; school roles live in our `iam` schema. Syncs to `neon_auth.users_sync` |
+| CRUD API | **Neon Data API** (PostgREST-compatible) via `@neondatabase/neon-js` | Supabase-style `.from().select()`; security = RLS. Called directly from the Vercel-hosted SPAs |
+| Business logic | **Neon Functions** (long-running compute on the Neon branch) | Payroll runs, invoicing, the rule engine, device ingestion, cron, payment-gateway webhooks |
+| File storage | **Neon Object Storage** (S3-compatible, branches with the DB) | Photos, CVs, PDFs, uploads; DB stores references only (`shared.file`) |
+| Config-as-code | **`neon.ts`** | Declares Postgres, Auth, Data API, Storage buckets, Functions per branch; deployed with `neon deploy` |
+| Migrations | **SQL-first versioned migrations** (e.g. dbmate), run against each Neon branch | Triggers, functions and RLS don't fit ORM schema tools |
 | Types | `neon-js gen-types` | Generated from the live schema |
 | Testing | Vitest, Playwright, SQL tests for RLS | RLS is tested like code |
-| CI/CD | GitHub Actions + Neon branch per PR | |
-
-### Local run
-
-1. Enable Neon Auth + Data API on a branch. Expose schemas `core`, `iam`, `shared`, `student`, `admission`, `front`, `cal` (or rely on `public` views from `004`).
-2. Apply `packages/db/migrations/001_foundation.sql` … `004_data_api.sql`.
-3. Copy `apps/admin/.env.example` to `apps/admin/.env` and set `VITE_NEON_DATABASE_URL` (HTTPS database URL, **not** a Postgres connection string).
-4. `npm install` then `npm run dev:admin` (or `./start.sh`). Sign in; the first account is bootstrapped as Super Admin.
-
-Simple lists/forms call `.from().select()` / `.insert()` / `.update()`. Enrolment is `rpc('enrol_application')`. Do not use `apps/api`.
+| CI/CD | GitHub Actions: `neon deploy` (backend) + Vercel Git integration (frontend), one Neon branch per PR | Vercel's Neon Native Integration auto-syncs `DATABASE_URL` and Neon Auth env vars per preview |
 
 ### How the frontend talks to Neon
 
 ```
-React app ──(JWT from Neon Auth)──► Neon Data API ──► Postgres (RLS enforces access)
-    │
-    └──► Server functions (Hono) ──► Postgres  (transactions, secrets, jobs, gateways)
+                        ┌────────────────────────  Neon project "school"  ────────────────────────┐
+Vercel (SPA)            │                                                                          │
+ admin.<domain>   ──────┼──► Neon Auth (login, session, JWT) ──────────────────────────────────┐   │
+ portal.<domain>  ──────┤                                                                       │   │
+                        │                                                                       ▼   │
+                  ──────┼──(JWT)──► Neon Data API ──► Postgres  (RLS enforces every read/write) │   │
+                        │                                                                           │
+                  ──────┼──(JWT)──► Neon Functions ──► Postgres + Neon Object Storage             │
+                        │            (payroll, invoicing, rules, devices, webhooks, cron)           │
+                        └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Use Data API + RLS | Use server functions |
+Nothing but static assets is deployed to Vercel — no server connection string ever ships to a Vercel server function, because there isn't one. The browser holds only a short-lived Neon Auth JWT.
+
+| Use Data API + RLS | Use Neon Functions |
 |---|---|
 | Lists, detail pages, simple create/update | Payroll runs, fee invoice generation, rule evaluation |
 | Lookups, settings, dashboards | Multi-table money transactions |
 | Portal reads (results, attendance, dues) | Attendance-device receiver, SMS / payment-gateway callbacks, cron |
-| | Anything needing a secret key |
+| Uploading a file to Object Storage directly (presigned) | Anything needing a secret key or server-side validation before writing |
 
-**Security rule:** never enable the Data API on a table until RLS is on and grants are correct. Never ship a database connection string to the browser.
+**Security rule:** never turn on the Data API for a table until RLS is on and grants are correct. Never ship a database connection string to any client, including a Vercel server function.
+
+### Why this split (and the one open risk)
+- Object Storage, Functions and the AI Gateway are **beta** (July 2026) and only run in `aws-us-east-2` today. Our Neon project (`school`, `us-east-2`) already matches that region.
+- Neon Functions is Neon's own long-running compute, not Vercel's. Vercel's job here is purely to serve the two React SPAs fast over its CDN and give us preview deployments per PR (with a matching Neon branch via the Vercel Marketplace integration).
+- **Risk to track:** beta features can change before GA. Keep `packages/rules` (the rule evaluator) portable — if Neon Functions' interface changes, that package should still run unmodified in a plain Node/Hono server as a fallback.
 
 ---
 
@@ -104,16 +111,19 @@ Safeguards: draft → publish, versions, effective dating, simulation on past da
 ```
 sms/
 ├─ apps/
-│  ├─ admin/            # Admin & Staff app (desktop-first)
-│  ├─ portal/           # Student & Parent app (mobile-first)
-│  └─ functions/        # Hono server functions (jobs, webhooks, payroll, devices)
+│  ├─ admin/            # Admin & Staff SPA → deployed to Vercel (admin.<domain>)
+│  └─ portal/           # Student & Parent SPA → deployed to Vercel (portal.<domain>)
+├─ neon/
+│  ├─ neon.ts           # declares Postgres, Auth, Data API, Storage buckets, Functions per branch
+│  └─ functions/        # Neon Functions: payroll, invoicing, rule runner, device receiver, webhooks, cron
 ├─ packages/
 │  ├─ ui/               # shadcn/ui components + design tokens
 │  ├─ db/               # migrations/, seeds/, generated types, RLS tests
 │  ├─ crud-engine/      # config-driven list + form engine (table, fields, lookups, permissions)
-│  ├─ rules/            # rule evaluator + action handlers (shared by functions and simulator)
+│  ├─ rules/            # rule evaluator + action handlers — portable, no Neon-Functions-only APIs
 │  └─ config/           # eslint, tsconfig, tailwind presets
 ├─ docs/                # per-module design notes (ERD, decisions)
+├─ vercel.json          # two Vercel projects (admin, portal), both static-build only
 └─ README.md
 ```
 
@@ -186,7 +196,7 @@ Calendar (working days) + Roster (expected duty) + Attendance (actual)
 
 | Phase | Scope | Outcome |
 |---|---|---|
-| **0** | Neon project, branches, monorepo, CI, RLS layer (`iam.current_user_id()`, `iam.has_permission()`, generated policies) | Secure base |
+| **0** | `neon.ts` (Auth + Data API + Storage + Functions declared), branches, monorepo, Vercel projects + Neon Marketplace integration, CI, RLS layer (`iam.current_user_id()`, `iam.has_permission()`, generated policies) | Secure base, deployable end to end |
 | **1** | Modules 1–3 UI: lookup manager, roles & permissions, settings, rule / workflow skeleton | Admin can configure the system |
 | **2** | 8 Calendar, 6 Student, 5 Admission, 4 Front Office | Students enrolled |
 | **3** | 7 Academic, 9 Attendance, 10 Devices | Daily school operations |
@@ -200,7 +210,9 @@ Calendar (working days) + Roster (expected duty) + Attendance (actual)
 Phases 6 and 8 depend on earlier phases by design: Payroll needs Calendar, Attendance, Leave, Rules and Accounts; Portals only consume other modules.
 
 ### Environments
-- Neon branches: `main` (production), `staging`, and a short-lived branch per pull request. Auth data branches with the database.
+- Neon branches: `main` (production), `staging`, and a short-lived branch per pull request. Auth, Data API config, Storage buckets and Functions all branch together with the database via `neon.ts`.
+- Vercel: two projects (`admin`, `portal`), each with a Preview deployment per PR. The Vercel ↔ Neon Marketplace integration creates the matching Neon branch and injects `DATABASE_URL` and the Neon Auth keys into that Vercel preview automatically.
+- `.env` files never hold a raw Postgres connection string on the frontend side — only the Data API URL and Neon Auth publishable key are public; the pooled connection string (like the one for the `school` database) is used solely by migration tooling and Neon Functions, never bundled into a browser build.
 
 ---
 
@@ -220,11 +232,12 @@ Phases 6 and 8 depend on earlier phases by design: Payroll needs Calendar, Atten
 
 | Item | Why it matters |
 |---|---|
-| Neon Auth maturity | Rebuilt on Better Auth; confirm current status before committing |
-| Phone-number OTP for parents | Not verified with Neon Auth; fallback is synthetic email or a small custom OTP flow |
-| Data API and custom schemas | `004_data_api.sql` adds `public` views for entity keys; also expose domain schemas in Data API settings |
+| Neon Auth, Data API, Object Storage, Functions are all **beta** (Jul 2026) | Interfaces can change before GA; keep `packages/rules` portable as a fallback (see §2) |
+| Phone-number OTP for parents | Neon Auth's phone-number plugin exists but 2FA/MFA is still roadmap — confirm OTP-only login is sufficient, no second factor required |
+| Data API and custom schemas | Confirm the API can expose `core`, `iam`, `shared` — otherwise expose them or add views |
 | `.rpc()` support | Needed for calling Postgres functions from the client; test early |
-| Where server functions run | Cloudflare Workers (+ R2, cron) vs Vercel — pick one |
+| Object Storage region lock | Currently only `aws-us-east-2` (Ohio) — our `school` project is already there; don't move regions without checking this |
+| Neon Functions cold start / limits | It's "long-running compute alongside the database", not edge functions — confirm cold-start and timeout behavior for a payroll run before relying on it for large batch jobs |
 | Attendance device brand and model | Decides the integration protocol (push, SDK, bridge) |
 | Student attendance: daily or per period | Changes table design |
 | Accounting depth | Proposed: proper double-entry COA from day one |
