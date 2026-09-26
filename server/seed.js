@@ -1,176 +1,129 @@
 import { createHash, randomUUID, scryptSync } from "node:crypto";
+import { lv, one, query } from "./db.js";
 
 function hashPassword(password, salt = randomUUID()) {
   const hash = scryptSync(password, salt, 32).toString("hex");
   return `${salt}:${hash}`;
 }
 
-function lv(db, type, code) {
-  const row = db.prepare(`
-    SELECT v.id FROM core_lookup_value v
-    JOIN core_lookup_type t ON t.id = v.lookup_type_id
-    WHERE t.code = ? AND v.code = ?
-  `).get(type, code);
-  if (!row) throw new Error(`Missing lookup ${type}.${code}`);
-  return row.id;
-}
+export async function seed() {
+  const existing = await one("SELECT id FROM iam.credential WHERE email = $1", ["admin@school.local"]);
+  if (existing) return;
 
-export function seed(db) {
-  const count = db.prepare("SELECT COUNT(*) AS n FROM core_lookup_type").get().n;
-  if (count > 0) return;
-
-  const types = [
-    ["record_status", "Record status", 1, 1],
-    ["user_status", "User account status", 1, 1],
-    ["profile_type", "Profile type", 0, 1],
-    ["permission_action", "Permission action", 0, 1],
-    ["device_platform", "Device platform", 0, 1],
-    ["gender", "Gender", 0, 1],
-  ];
-  const insertType = db.prepare(
-    "INSERT INTO core_lookup_type (code, name, is_status, is_system) VALUES (?, ?, ?, ?)"
-  );
-  for (const t of types) insertType.run(...t);
-
-  const values = [
-    ["record_status", "active", "Active", 1, 0],
-    ["record_status", "inactive", "Inactive", 2, 0],
-    ["record_status", "archived", "Archived", 3, 1],
-    ["user_status", "pending", "Pending activation", 1, 0],
-    ["user_status", "active", "Active", 2, 0],
-    ["user_status", "suspended", "Suspended", 3, 0],
-    ["user_status", "disabled", "Disabled", 4, 1],
-    ["profile_type", "staff", "Staff", 1, 0],
-    ["profile_type", "student", "Student", 2, 0],
-    ["profile_type", "parent", "Parent", 3, 0],
-    ["permission_action", "view", "View", 1, 0],
-    ["permission_action", "create", "Create", 2, 0],
-    ["permission_action", "update", "Update", 3, 0],
-    ["permission_action", "delete", "Delete", 4, 0],
-    ["permission_action", "approve", "Approve", 5, 0],
-    ["permission_action", "export", "Export", 6, 0],
-    ["permission_action", "print", "Print", 7, 0],
-    ["device_platform", "android", "Android", 1, 0],
-    ["device_platform", "ios", "iOS", 2, 0],
-    ["device_platform", "web", "Web", 3, 0],
-    ["gender", "male", "Male", 1, 0],
-    ["gender", "female", "Female", 2, 0],
-  ];
-  const insertValue = db.prepare(`
-    INSERT INTO core_lookup_value (lookup_type_id, code, label, sort_order, is_final, is_system)
-    SELECT id, ?, ?, ?, ?, 1 FROM core_lookup_type WHERE code = ?
-  `);
-  for (const [type, code, label, ord, isFinal] of values) {
-    insertValue.run(code, label, ord, isFinal, type);
+  const active = await lv("record_status", "active");
+  const userActive = await lv("user_status", "active");
+  const staffType = await lv("profile_type", "staff");
+  const male = await lv("gender", "male");
+  const female = await lv("gender", "female");
+  if (!active || !userActive || !staffType) {
+    throw new Error("Foundation lookups missing. Run 01_foundation_schema.sql first.");
   }
 
-  const modules = [
-    ["platform_setup", "Platform Setup", 1],
-    ["identity_access", "Identity & Access", 2],
-    ["shared_services", "Shared Services", 3],
-    ["front_office", "Front Office", 4],
-    ["admission", "Admission", 5],
-    ["student", "Student Management", 6],
-    ["academic", "Academic", 7],
-    ["academic_calendar", "Academic Calendar & Events", 8],
-    ["attendance", "Attendance", 9],
-    ["attendance_device", "Attendance Devices", 10],
-    ["examination", "Examination & Result", 11],
-    ["hifz", "Hifz", 12],
-    ["fees", "Fees", 13],
-    ["payments", "Payments", 14],
-    ["accounts", "Accounts", 15],
-    ["inventory", "Inventory & Procurement", 16],
-    ["library", "Library", 17],
-    ["hr", "HR Core", 18],
-    ["roster", "Roster & Duty", 19],
-    ["leave", "Leave Management", 20],
-    ["payroll", "Payroll & Salary Generator", 21],
-    ["transport", "Transport", 22],
-    ["communication", "Communication", 23],
-    ["student_portal", "Student Portal", 24],
-    ["parent_portal", "Parent Portal", 25],
-    ["reports", "Reports & Dashboards", 26],
-  ];
-  const insertModule = db.prepare(
-    "INSERT INTO core_module (code, name, sort_order) VALUES (?, ?, ?)"
+  await query(
+    `INSERT INTO core.campus (code, name, short_name, address, status_id)
+     VALUES ('MAIN', 'Main Campus', 'Main', 'Dhaka', $1)
+     ON CONFLICT (code) DO NOTHING`,
+    [active]
   );
-  for (const m of modules) insertModule.run(...m);
+  await query(
+    `INSERT INTO core.campus (code, name, short_name, address, status_id)
+     VALUES ('NORTH', 'North Campus', 'North', 'Uttara', $1)
+     ON CONFLICT (code) DO NOTHING`,
+    [active]
+  );
 
-  const active = lv(db, "record_status", "active");
-  const userActive = lv(db, "user_status", "active");
-  const staffType = lv(db, "profile_type", "staff");
-  const male = lv(db, "gender", "male");
-  const female = lv(db, "gender", "female");
-
-  db.prepare(
-    "INSERT INTO core_campus (code, name, short_name, address, status_id) VALUES (?, ?, ?, ?, ?)"
-  ).run("MAIN", "Main Campus", "Main", "Dhaka", active);
-  db.prepare(
-    "INSERT INTO core_campus (code, name, short_name, address, status_id) VALUES (?, ?, ?, ?, ?)"
-  ).run("NORTH", "North Campus", "North", "Uttara", active);
-
+  const iamModule = await one("SELECT id FROM core.module WHERE code = 'identity_access'");
   const resources = ["user", "role", "permission", "user_role", "user_device"];
   const actions = ["view", "create", "update", "delete", "approve", "export", "print"];
-  const iamModule = db.prepare("SELECT id FROM core_module WHERE code = 'identity_access'").get().id;
-  const insertPerm = db.prepare(
-    "INSERT INTO iam_permission (module_id, resource, action_id) VALUES (?, ?, ?)"
-  );
   for (const resource of resources) {
     for (const action of actions) {
-      insertPerm.run(iamModule, resource, lv(db, "permission_action", action));
+      const actionId = await lv("permission_action", action);
+      await query(
+        `INSERT INTO iam.permission (module_id, resource, action_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (module_id, resource, action_id) DO NOTHING`,
+        [iamModule.id, resource, actionId]
+      );
     }
   }
 
-  const insertRole = db.prepare(
-    "INSERT INTO iam_role (code, name, description, is_system, status_id) VALUES (?, ?, ?, ?, ?)"
+  const extraRoles = [
+    ["principal", "Principal", "Campus principal", false],
+    ["teacher", "Teacher", "Teaching staff", false],
+    ["accountant", "Accountant", "Fees and accounts", false],
+    ["front_office", "Front Office", "Enquiries and visitors", false],
+  ];
+  for (const [code, name, description, isSystem] of extraRoles) {
+    await query(
+      `INSERT INTO iam.role (code, name, description, is_system, status_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (code) DO NOTHING`,
+      [code, name, description, isSystem, active]
+    );
+  }
+
+  const teacherRole = await one("SELECT id FROM iam.role WHERE code = 'teacher'");
+  const teacherPerms = await query(
+    `SELECT p.id FROM iam.permission p
+     JOIN core.lookup_value a ON a.id = p.action_id
+     WHERE p.resource IN ('user', 'user_device') AND a.code = 'view'`
   );
-  insertRole.run("super_admin", "Super Admin", "Full access; manages roles, permissions and rules", 1, active);
-  insertRole.run("principal", "Principal", "Campus principal", 0, active);
-  insertRole.run("teacher", "Teacher", "Teaching staff", 0, active);
-  insertRole.run("accountant", "Accountant", "Fees and accounts", 0, active);
-  insertRole.run("front_office", "Front Office", "Enquiries and visitors", 0, active);
+  for (const p of teacherPerms.rows) {
+    await query(
+      `INSERT INTO iam.role_permission (role_id, permission_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [teacherRole.id, p.id]
+    );
+  }
 
-  const teacherRole = db.prepare("SELECT id FROM iam_role WHERE code = 'teacher'").get().id;
-  const teacherPerms = db.prepare(`
-    SELECT p.id FROM iam_permission p
-    JOIN core_lookup_value a ON a.id = p.action_id
-    WHERE p.resource IN ('user', 'user_device') AND a.code = 'view'
-  `).all();
-  const grant = db.prepare(
-    "INSERT INTO iam_role_permission (role_id, permission_id) VALUES (?, ?)"
+  const adminPerson = await one(
+    `INSERT INTO core.person (first_name, last_name, gender_id, status_id)
+     VALUES ('Amina', 'Rahman', $1, $2) RETURNING id`,
+    [female, active]
   );
-  for (const p of teacherPerms) grant.run(teacherRole, p.id);
-
-  const insertPerson = db.prepare(
-    "INSERT INTO core_person (first_name, last_name, gender_id, status_id) VALUES (?, ?, ?, ?)"
+  const staffPerson = await one(
+    `INSERT INTO core.person (first_name, last_name, gender_id, status_id)
+     VALUES ('Karim', 'Hossain', $1, $2) RETURNING id`,
+    [male, active]
   );
-  const adminPerson = Number(insertPerson.run("Amina", "Rahman", female, active).lastInsertRowid);
-  const staffPerson = Number(insertPerson.run("Karim", "Hossain", male, active).lastInsertRowid);
 
-  const insertUser = db.prepare(`
-    INSERT INTO iam_app_user (auth_user_id, person_id, profile_type_id, status_id, last_login_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-  `);
-  const adminUser = Number(insertUser.run(randomUUID(), adminPerson, staffType, userActive).lastInsertRowid);
-  const staffUser = Number(insertUser.run(randomUUID(), staffPerson, staffType, userActive).lastInsertRowid);
-
-  const insertCred = db.prepare(
-    "INSERT INTO iam_credential (user_id, email, password_hash) VALUES (?, ?, ?)"
+  const adminUser = await one(
+    `INSERT INTO iam.app_user (auth_user_id, person_id, profile_type_id, status_id, last_login_at)
+     VALUES ($1, $2, $3, $4, now()) RETURNING id`,
+    [randomUUID(), adminPerson.id, staffType, userActive]
   );
-  insertCred.run(adminUser, "admin@school.local", hashPassword("Admin@123"));
-  insertCred.run(staffUser, "staff@school.local", hashPassword("Staff@123"));
+  const staffUser = await one(
+    `INSERT INTO iam.app_user (auth_user_id, person_id, profile_type_id, status_id, last_login_at)
+     VALUES ($1, $2, $3, $4, now()) RETURNING id`,
+    [randomUUID(), staffPerson.id, staffType, userActive]
+  );
 
-  const superAdmin = db.prepare("SELECT id FROM iam_role WHERE code = 'super_admin'").get().id;
-  db.prepare(
-    "INSERT INTO iam_user_role (user_id, role_id, campus_id, valid_from) VALUES (?, ?, NULL, date('now'))"
-  ).run(adminUser, superAdmin);
-  db.prepare(
-    "INSERT INTO iam_user_role (user_id, role_id, campus_id, valid_from) VALUES (?, ?, 1, date('now'))"
-  ).run(staffUser, teacherRole);
+  await query("INSERT INTO iam.credential (user_id, email, password_hash) VALUES ($1, $2, $3)", [
+    adminUser.id,
+    "admin@school.local",
+    hashPassword("Admin@123"),
+  ]);
+  await query("INSERT INTO iam.credential (user_id, email, password_hash) VALUES ($1, $2, $3)", [
+    staffUser.id,
+    "staff@school.local",
+    hashPassword("Staff@123"),
+  ]);
 
-  const web = lv(db, "device_platform", "web");
-  db.prepare(
-    "INSERT INTO iam_user_device (user_id, platform_id, push_token, last_seen_at) VALUES (?, ?, ?, datetime('now'))"
-  ).run(adminUser, web, createHash("sha256").update("admin-web").digest("hex"));
+  const superAdmin = await one("SELECT id FROM iam.role WHERE code = 'super_admin'");
+  const mainCampus = await one("SELECT id FROM core.campus WHERE code = 'MAIN'");
+  await query(
+    "INSERT INTO iam.user_role (user_id, role_id, campus_id, valid_from) VALUES ($1, $2, NULL, current_date)",
+    [adminUser.id, superAdmin.id]
+  );
+  await query(
+    "INSERT INTO iam.user_role (user_id, role_id, campus_id, valid_from) VALUES ($1, $2, $3, current_date)",
+    [staffUser.id, teacherRole.id, mainCampus.id]
+  );
+
+  const web = await lv("device_platform", "web");
+  await query(
+    "INSERT INTO iam.user_device (user_id, platform_id, push_token, last_seen_at) VALUES ($1, $2, $3, now())",
+    [adminUser.id, web, createHash("sha256").update("admin-web").digest("hex")]
+  );
 }

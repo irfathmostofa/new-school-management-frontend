@@ -56,10 +56,10 @@ A person may have more than one login profile (`UNIQUE (person_id, profile_type_
 
 ## Local preview adapter
 
-This environment has no Neon project. `server/` stands in for Neon Auth + Data API:
+The API talks to Neon Postgres via `DATABASE_URL` in `.env`.
 
-- SQLite file `server/data/sms.db` holds foundation + IAM tables.
-- `iam_credential` (password hash) exists only in the adapter. Production uses Neon Auth; this table is not in `01_foundation_schema.sql`.
+- Schema: `schema/01_foundation_schema.sql` + `schema/02_iam_rls.sql` applied with `npm run migrate`.
+- `iam.credential` (password hash) exists only until Neon Auth is enabled; see `schema/03_iam_local_auth.sql`.
 - JWT session cookie `sms_session` (httpOnly) stands in for the Neon Auth JWT.
 
 Seed logins:

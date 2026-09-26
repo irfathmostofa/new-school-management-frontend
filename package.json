@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "bash start.sh",
-    "dev:server": "node --experimental-sqlite --watch server/index.js",
+    "dev:server": "node --watch server/index.js",
     "dev:ui": "vite --host 0.0.0.0 --port 5173",
-    "start": "node --experimental-sqlite server/index.js",
+    "start": "node server/index.js",
+    "migrate": "node server/migrate.js",
     "build": "tsc -b && vite build"
   },
   "dependencies": {
@@ -16,7 +17,9 @@
     "@tanstack/react-table": "^8.21.3",
     "clsx": "^2.1.1",
     "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "pg": "^8.14.1",
     "lucide-react": "^0.503.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

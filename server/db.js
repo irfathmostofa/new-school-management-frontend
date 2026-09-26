@@ -1,43 +1,68 @@
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
-import { seed } from "./seed.js";
+import dotenv from "dotenv";
+import pg from "pg";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, "../data");
-mkdirSync(dataDir, { recursive: true });
+dotenv.config();
 
-const db = new DatabaseSync(join(dataDir, "sms.db"));
-db.exec("PRAGMA foreign_keys = ON");
-db.exec("PRAGMA journal_mode = WAL");
-db.exec(readFileSync(join(__dirname, "schema.sql"), "utf8"));
-seed(db);
+pg.types.setTypeParser(1082, (val) => val);
+pg.types.setTypeParser(1114, (val) => val);
+pg.types.setTypeParser(1184, (val) => val);
+pg.types.setTypeParser(20, (val) => Number(val));
 
-export function transaction(fn) {
-  db.exec("BEGIN IMMEDIATE");
+const url = process.env.DATABASE_URL;
+if (!url) {
+  throw new Error("DATABASE_URL is required. Copy .env.example to .env and paste your Neon connection string.");
+}
+
+export const pool = new pg.Pool({
+  connectionString: url,
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+});
+
+export async function query(text, params = []) {
+  return pool.query(text, params);
+}
+
+export async function one(text, params = []) {
+  const res = await pool.query(text, params);
+  return res.rows[0] ?? null;
+}
+
+export async function many(text, params = []) {
+  const res = await pool.query(text, params);
+  return res.rows;
+}
+
+export async function transaction(fn) {
+  const client = await pool.connect();
   try {
-    const result = fn();
-    db.exec("COMMIT");
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
     return result;
   } catch (err) {
-    db.exec("ROLLBACK");
+    await client.query("ROLLBACK");
     throw err;
+  } finally {
+    client.release();
   }
 }
 
-export function insert(stmt, ...params) {
-  const result = stmt.run(...params);
-  return Number(result.lastInsertRowid);
-}
-
-export function lv(type, code) {
-  const row = db.prepare(`
-    SELECT v.id FROM core_lookup_value v
-    JOIN core_lookup_type t ON t.id = v.lookup_type_id
-    WHERE t.code = ? AND v.code = ?
-  `).get(type, code);
+export async function lv(type, code) {
+  const row = await one(
+    `SELECT v.id
+     FROM core.lookup_value v
+     JOIN core.lookup_type t ON t.id = v.lookup_type_id
+     WHERE t.code = $1 AND v.code = $2`,
+    [type, code]
+  );
   return row?.id ?? null;
 }
 
-export default db;
+export function readSql(name) {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  return readFileSync(join(root, "schema", name), "utf8");
+}

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # Start the IAM API in the background
-node --experimental-sqlite server/index.js &
+node server/index.js &
 BACKEND_PID=$!
 
 cleanup() {
