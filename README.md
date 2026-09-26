@@ -24,8 +24,8 @@ Neon shipped a full backend suite in beta (Jul 2026): **Postgres, Auth, Data API
 | Layer | Choice | Notes |
 |---|---|---|
 | Frontend hosting | **Vercel** | Two static/SPA deployments: `admin.<domain>`, `portal.<domain>` |
-| Frontend | **React + Vite + TypeScript** | Two apps in one monorepo, built as static SPAs (no Vercel server runtime needed) |
-| Styling / UI | **Tailwind CSS + shadcn/ui** | Shared `packages/ui` |
+| Frontend | **React + Vite + TypeScript** | Single admin SPA (portal later); static build, no Vercel server runtime |
+| Styling / UI | **Tailwind CSS + shadcn/ui** | Tokens in `src/` |
 | Data fetching | **TanStack Query** | Caching, pagination, optimistic updates |
 | Tables / forms | **TanStack Table**, **React Hook Form + Zod** | Pagination is mandatory on every list |
 | Routing | **TanStack Router** | Type-safe search params for filters and pagination |
@@ -106,24 +106,17 @@ Safeguards: draft → publish, versions, effective dating, simulation on past da
 
 ---
 
-## 4. Proposed repository layout
+## 4. Repository layout
+
+Single app (not a monorepo). Admin UI and local API share one `package.json`.
 
 ```
 sms/
-├─ apps/
-│  ├─ admin/            # Admin & Staff SPA → deployed to Vercel (admin.<domain>)
-│  └─ portal/           # Student & Parent SPA → deployed to Vercel (portal.<domain>)
-├─ neon/
-│  ├─ neon.ts           # declares Postgres, Auth, Data API, Storage buckets, Functions per branch
-│  └─ functions/        # Neon Functions: payroll, invoicing, rule runner, device receiver, webhooks, cron
-├─ packages/
-│  ├─ ui/               # shadcn/ui components + design tokens
-│  ├─ db/               # migrations/, seeds/, generated types, RLS tests
-│  ├─ crud-engine/      # config-driven list + form engine (table, fields, lookups, permissions)
-│  ├─ rules/            # rule evaluator + action handlers — portable, no Neon-Functions-only APIs
-│  └─ config/           # eslint, tsconfig, tailwind presets
-├─ docs/                # per-module design notes (ERD, decisions)
-├─ vercel.json          # two Vercel projects (admin, portal), both static-build only
+├─ src/                 # Admin SPA (React + Vite)
+├─ server/              # Local IAM API (Neon Auth / Data API stand-in)
+├─ schema/              # Versioned SQL (Postgres target)
+├─ docs/                # Per-module design notes
+├─ start.sh             # Starts API + Vite together
 └─ README.md
 ```
 
